@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Digital Goats</title>
+    <style>
+        #dev-panel { display: none; }
+        #controls {
+          outline: 5px normal #080808;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Digital Goats</h1>
+
+    <p>Digital Goats Owned:</p>
+    <div id="balance-display">0</div>
+
+    <div class="controls">
+        <h2>Enter Code</h2>
+        <input type="text" id="code-input" placeholder="Enter code">
+        <button id="submit-btn">Apply Code</button>
+    </div>
+
+    <div id="message"></div>
+    
+    
+    <div id="file-upload-section">
+        <h3>Load Encrypted Code File</h3>
+        <input type="file" id="file-input" accept=".txt,.json">
+        <button id="load-file-btn">Process File</button>
+    </div>
+
+    <button id="reset-btn">Reset Balance to 0</button>
+    
+    <div id="dev-panel">
+        <hr>
+        <h2>Developer Tools (Edit Codes)</h2>
+        
+        <div id="code-list"></div>
+        
+        <h3>Add/Update Code</h3>
+        <input type="text" id="dev-code" placeholder="New Code (e.g., GOLD)">
+        <input type="number" id="dev-amount" placeholder="Amount (e.g., 100)">
+        <button id="dev-add-btn">Add/Update Code</button>
+    </div>
+
+    <script>
+        const BALANCE_KEY = 'gameBalance';
+        const CODES_KEY = 'secretCodes';
+        const USED_KEY = 'usedCodes';
+        const INITIAL_BALANCE = 0;
+        
+        const Base32 = {
+            CHARS: "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567",
+            b32decode: function(a){
+                for(var b=a.toUpperCase().split("").map(c=>this.CHARS.indexOf(c)).filter(c=>c!==-1),c=0,d=0,e="",f=0,g=0;g<b.length;g++){
+                    var h=b[g];
+                    if(d=c*5+h,f+=5,d>>=5,e+=String.fromCharCode(d),c=h,f-=5,f>=8){
+                        var i=c*32+b[g+1];
+                        i>>=8-f;
+                        e+=String.fromCharCode(i);
+                        c=b[g+1];
+                        g++;
+                        f+=3;
+                        c>>=f;
+                        f-=8;
+                    }
+                }
+                return e.split('').map(c => c.charCodeAt(0)).map(c => String.fromCharCode(c)).join('');
+            }
+        };
+
+
+        function getBalance() {
+            const storedBalance = localStorage.getItem(BALANCE_KEY);
+            if (storedBalance === null) {
+                setBalance(INITIAL_BALANCE);
+                return INITIAL_BALANCE;
+            }
+            return parseInt(storedBalance);
+        }
+
+      const DEV_ACCESS_CODE = '__DODEVELOPERTOOLS__';
+
+        function setBalance(newBalance) {
+            localStorage.setItem(BALANCE_KEY, newBalance);
+            updateDisplay(newBalance);
+        }
+
+        function getCodes() {
+            const storedCodes = localStorage.getItem(CODES_KEY);
+            if (storedCodes === null) {
+                const initialCodes = {'1': 1, '2': 1};
+                setCodes(initialCodes);
+                return initialCodes;
+            }
+            return JSON.parse(storedCodes);
+        }
+
+        function setCodes(codesObject) {
+            localStorage.setItem(CODES_KEY, JSON.stringify(codesObject));
+        }
+
+        function getUsedCodes() {
+            const storedUsed = localStorage.getItem(USED_KEY);
+            if (storedUsed === null) {
+                setUsedCodes([]);
+            }
+            return JSON.parse(localStorage.getItem(USED_KEY));
+        }
+
+        function setUsedCodes(codesArray) {
+            localStorage.setItem(USED_KEY, JSON.stringify(codesArray));
+        }
+
+
+        function updateDisplay(balance) {
+            document.getElementById('balance-display').textContent = balance.toLocaleString();
+        }
+
+        function showMessage(text, color, duration = 3000) {
+            const msgElement = document.getElementById('message');
+            msgElement.textContent = text;
+            msgElement.style.color = color;
+            setTimeout(() => msgElement.textContent = '', duration);
+        }
+
+
+        function renderCodeList() {
+            const codes = getCodes();
+            const listDiv = document.getElementById('code-list');
+            listDiv.innerHTML = '';
+            
+            for (const code in codes) {
+                const div = document.createElement('div');
+                div.innerHTML = `<strong>${code}</strong>: +${codes[code]} `;
+                const delBtn = document.createElement('button');
+                delBtn.textContent = 'Delete';
+                delBtn.onclick = () => deleteCode(code);
+                div.appendChild(delBtn);
+                listDiv.appendChild(div);
+            }
+        }
+
+        function deleteCode(code) {
+            if (confirm(`Are you sure you want to delete code "${code}"?`)) {
+                const codes = getCodes();
+                delete codes[code];
+                setCodes(codes);
+                renderCodeList();
+                showMessage(`Code ${code} deleted.`, 'red');
+            }
+        }
+
+        function handleAddCode() {
+            const codeInput = document.getElementById('dev-code');
+            const amountInput = document.getElementById('dev-amount');
+            const code = codeInput.value.toUpperCase().trim();
+            const amount = parseInt(amountInput.value);
+
+            if (!code || isNaN(amount)) {
+                showMessage('Error: Code and Amount must be valid.', 'red');
+                return;
+            }
+
+            const codes = getCodes();
+            codes[code] = amount;
+            setCodes(codes);
+            renderCodeList();
+            showMessage(`Code ${code} updated to +${amount}.`, 'green');
+            codeInput.value = '';
+            amountInput.value = '';
+        }
+        
+        function decodeContent(encodedString) {
+            let trimmedString = encodedString.trim();
+
+            try {
+                const decoded64 = atob(trimmedString);
+                if (decoded64.trim().startsWith('{') || decoded64.trim().startsWith('[')) {
+                    return decoded64.slice(4).slice(0, -4);
+                }
+            } catch (e) {
+            }
+            
+            try {
+                const decoded32 = Base32.b32decode(trimmedString);
+                if (decoded32.trim().startsWith('{') || decoded32.trim().startsWith('[')) {
+                    return decoded32;
+                }
+            } catch (e) {
+            }
+
+            throw new Error("Decoding failed: Content is not valid Base64 or Base32 JSON.");
+        }
+
+        function handleFileLoad(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const encodedContent = e.target.result;
+                
+                try {
+                    const jsonString = decodeContent(encodedContent);
+                    
+                    const newCodes = JSON.parse(jsonString);
+                    
+                    const currentCodes = getCodes();
+                    let addedCount = 0;
+                    
+                    if (typeof newCodes !== 'object' || Array.isArray(newCodes)) {
+                        throw new Error("File content is not a valid JSON object map.");
+                    }
+                    
+                    for (const key in newCodes) {
+                        const amount = parseInt(newCodes[key]);
+                        const codeKey = key.toUpperCase().trim();
+
+                        if (codeKey && !isNaN(amount) && amount > 0) {
+                            currentCodes[codeKey] = amount;
+                            addedCount++;
+                        }
+                    }
+
+                    if (addedCount === 0) {
+                         showMessage("File loaded, but no valid codes were found.", 'orange', 5000);
+                         return;
+                    }
+                    
+                    setCodes(currentCodes);
+                    renderCodeList();
+                    showMessage(`SUCCESS! Loaded ${addedCount} new/updated codes.`, 'green', 5000);
+
+                } catch (error) {
+                    console.error("File processing error:", error);
+                    showMessage(`ERROR: ${error.message || 'Could not process the file.'}`, 'red', 5000);
+                }
+            };
+            
+            reader.readAsText(file);
+        }
+
+
+
+        function handleSubmitCode() {
+            const inputElement = document.getElementById('code-input');
+            let codeName = inputElement.value.toUpperCase().trim(); 
+
+            if (codeName === DEV_ACCESS_CODE) {
+                document.getElementById('dev-panel').style.display = 'block';
+                showMessage('Developer Tools Activated!', 'blue');
+            } 
+            else {
+                const usedCodes = getUsedCodes();
+                const localCodes = getCodes();
+
+                if (usedCodes.includes(codeName)) {
+                    showMessage('Error: Code has already been used.', 'orange');
+                } else if (localCodes.hasOwnProperty(codeName)) {
+                    const amountToGive = localCodes[codeName];
+                    const currentBalance = getBalance();
+                    const newBalance = currentBalance + amountToGive;
+                    setBalance(newBalance);
+
+                    usedCodes.push(codeName);
+                    setUsedCodes(usedCodes);
+
+                    showMessage(`SUCCESS! Balance updated by +${amountToGive}.`, 'green');
+                } else {
+                    showMessage('Error: Invalid code entered.', 'red');
+                }
+            }
+            inputElement.value = '';
+        }
+
+        function handleReset() {
+            if (confirm("Are you sure you want to reset your balance and clear all used codes?")) {
+                setBalance(INITIAL_BALANCE);
+                setUsedCodes([]);
+                document.getElementById('dev-panel').style.display = 'none';
+                showMessage('Balance and Used Codes have been reset.', '#3498db');
+            }
+        }
+
+
+        document.getElementById('submit-btn').addEventListener('click', handleSubmitCode);
+        document.getElementById('reset-btn').addEventListener('click', handleReset);
+        document.getElementById('dev-add-btn').addEventListener('click', handleAddCode);
+        
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            document.getElementById('load-file-btn').disabled = false;
+        });
+
+        document.getElementById('load-file-btn').addEventListener('click', (e) => {
+            handleFileLoad({ target: { files: [document.getElementById('file-input').files[0]] } });
+        });
+
+        updateDisplay(getBalance()); 
+        renderCodeList();
+    </script>
+</body>
+</html>
